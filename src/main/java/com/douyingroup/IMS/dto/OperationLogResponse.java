@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-class OperationLogResponse {
+public class OperationLogResponse {
     private String logId;
     private String userId;
     private String username;
