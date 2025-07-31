@@ -6,65 +6,75 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
 
+@Slf4j
+@RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserService userService;
+    private static final AntPathMatcher matcher = new AntPathMatcher();
 
-    public JwtAuthenticationFilter(JwtUtil jwtUtil, UserService userService) {
-        this.jwtUtil = jwtUtil;
-        this.userService = userService;
-    }
+    // paths that bypass JWT validation
+    private static final List<String> WHITELIST = List.of(
+            "/swagger-ui/**",
+            "/v3/api-docs/**",
+            "/api/auth/login",
+            "/api/auth/register"
+    );
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain)
+            throws ServletException, IOException {
 
-        // Get JWT from request
+        String path = request.getRequestURI();
+
+        // 1. allow whitelisted endpoints
+        if (WHITELIST.stream().anyMatch(p -> matcher.match(p, path))) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // 2. normal JWT flow
         String token = getTokenFromRequest(request);
 
-        // Validate token
         if (StringUtils.hasText(token)) {
             try {
                 String username = jwtUtil.extractUsername(token);
 
-                // Check if user is not already authenticated
-                if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    // Validate token
-                    if (jwtUtil.validateToken(token, username)) {
-                        String userId = jwtUtil.extractUserId(token);
-                        String role = jwtUtil.extractRole(token);
+                if (username != null
+                        && SecurityContextHolder.getContext().getAuthentication() == null
+                        && jwtUtil.validateToken(token, username)) {
 
-                        // Set user details in request attributes for logging
-                        request.setAttribute("userId", userId);
-                        request.setAttribute("username", username);
+                    String role = jwtUtil.extractRole(token);
 
-                        // Create authentication token
-                        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                                username,
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                        );
-
-                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                        // Set authentication in security context
-                        SecurityContextHolder.getContext().setAuthentication(authToken);
-                    }
+                    UsernamePasswordAuthenticationToken auth =
+                            new UsernamePasswordAuthenticationToken(
+                                    username,
+                                    null,
+                                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
+                            );
+                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(auth);
                 }
-            } catch (Exception e) {
-                logger.error("Cannot set user authentication: {}", e);
+            } catch (Exception ex) {
+                // pass the Throwable itself (not its message) so stack-trace is logged
+                log.error("JWT filtering failed", ex);
             }
         }
 
@@ -72,10 +82,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String getTokenFromRequest(HttpServletRequest request) {
-        String bearerToken = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-            return bearerToken.substring(7);
-        }
-        return null;
+        String bearer = request.getHeader("Authorization");
+        return (StringUtils.hasText(bearer) && bearer.startsWith("Bearer "))
+                ? bearer.substring(7)
+                : null;
     }
 }

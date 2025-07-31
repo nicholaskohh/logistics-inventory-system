@@ -51,26 +51,26 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
 
         http
-            .cors(cors -> cors.configurationSource(request -> {
-                CorsConfiguration cfg = new CorsConfiguration();
-                cfg.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5173"));
-                cfg.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-                cfg.setAllowedHeaders(Arrays.asList("authorization", "content-type", "x-auth-token"));
-                cfg.setExposedHeaders(Arrays.asList("x-auth-token"));
-                cfg.setAllowCredentials(true);
-                return cfg;
-            }))
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                 .requestMatchers("/api/auth/login",
-                                  "/api/auth/register",
-                                  "/swagger-ui/**",
-                                  "/api-docs/**",
-                                  "/v3/api-docs/**").permitAll()
-                 .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .cors(cors -> cors.configurationSource(request -> {
+                    CorsConfiguration cfg = new CorsConfiguration();
+                    cfg.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5173"));
+                    cfg.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                    cfg.setAllowedHeaders(Arrays.asList("authorization", "content-type", "x-auth-token"));
+                    cfg.setExposedHeaders(Arrays.asList("x-auth-token"));
+                    cfg.setAllowCredentials(true);
+                    return cfg;
+                }))
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/login",
+                                "/api/auth/register",
+                                "/swagger-ui/**",
+                                "/api-docs/**",
+                                "/v3/api-docs/**").permitAll()
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
