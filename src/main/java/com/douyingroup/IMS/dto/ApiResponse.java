@@ -14,18 +14,18 @@ public class ApiResponse<T> {
 
     // Static factory methods for creating responses
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(0, "Success", data);
+        return new ApiResponse<T>(0, "Success", data);
     }
 
     public static <T> ApiResponse<T> success(String message, T data) {
-        return new ApiResponse<>(0, message, data);
+        return new ApiResponse<T>(0, message, data);
     }
 
     public static <T> ApiResponse<T> error(int code, String message) {
-        return new ApiResponse<>(code, message, null);
+        return new ApiResponse<T>(code, message, null);
     }
 
     public static <T> ApiResponse<T> error(String message) {
-        return new ApiResponse<>(1, message, null);
+        return new ApiResponse<T>(1, message, null);
     }
 }
