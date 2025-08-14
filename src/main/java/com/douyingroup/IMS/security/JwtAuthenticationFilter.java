@@ -1,90 +1,107 @@
-package com.douyingroup.IMS.security;
+package com.douyingroup.IMS.security;   // ← change if your base package differs
 
 import com.douyingroup.IMS.service.UserService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.util.AntPathMatcher;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
-@Slf4j
+@Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtUtil jwtUtil;
-    private final UserService userService;
-    private static final AntPathMatcher matcher = new AntPathMatcher();
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
-    // paths that bypass JWT validation
-    private static final List<String> WHITELIST = List.of(
-            "/swagger-ui/**",
-            "/v3/api-docs/**",
-            "/api/auth/login",
-            "/api/auth/register"
-    );
+    private final JwtUtil     jwtUtil;
+    private final UserService userService;   // to load UserDetails if you need it
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
-                                    @NonNull FilterChain filterChain)
-            throws ServletException, IOException {
+                                    @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        String path = request.getRequestURI();
-
-        // 1. allow whitelisted endpoints
-        if (WHITELIST.stream().anyMatch(p -> matcher.match(p, path))) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // 2. normal JWT flow
-        String token = getTokenFromRequest(request);
+        String token = extractToken(request);
 
         if (StringUtils.hasText(token)) {
             try {
-                String username = jwtUtil.extractUsername(token);
+                /* ----- RS256 signature + claims validation ----- */
+                Claims claims   = jwtUtil.validate(token);   // throws JwtException if bad
+                String username = claims.getSubject();
+                String uid      = claims.get("uid", String.class);
+                @SuppressWarnings("unchecked")
+                List<String> roleCodes = claims.get("roles", List.class);  // may be null
 
                 if (username != null
-                        && SecurityContextHolder.getContext().getAuthentication() == null
-                        && jwtUtil.validateToken(token, username)) {
+                        && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                    String role = jwtUtil.extractRole(token);
+                    /* (Optional) load the full UserDetails from DB */
+                    UserDetails userDetails = userService.loadUserByUsername(username);
 
-                    UsernamePasswordAuthenticationToken auth =
+                    /* Build authorities list */
+                    List<SimpleGrantedAuthority> authorities = roleCodes == null
+                            ? Collections.emptyList()
+                            : roleCodes.stream()
+                            .map(SimpleGrantedAuthority::new)
+                            .collect(Collectors.toList());
+
+                    UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
-                                    username,
-                                    null,
-                                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                            );
-                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                                    userDetails,    // principal
+                                    null,           // credentials (null = already verified)
+                                    authorities);
+
+                    authToken.setDetails(
+                            new WebAuthenticationDetailsSource().buildDetails(request));
+
+                    /* Put the auth object into SecurityContext */
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+
+                    /* Expose logging fields */
+                    String resolvedUserId = uid;
+                    if (resolvedUserId == null && userDetails instanceof AuthenticatedUser au) {
+                        resolvedUserId = au.getUserId();
+                    }
+                    request.setAttribute("userId", resolvedUserId);
+                    request.setAttribute("username", username);
                 }
+
+            } catch (JwtException ex) {
+                log.warn("Invalid or expired JWT: {}", ex.getMessage());
+                // No auth set → will fall through; downstream may return 401
             } catch (Exception ex) {
-                // pass the Throwable itself (not its message) so stack-trace is logged
-                log.error("JWT filtering failed", ex);
+                log.error("Cannot set user authentication", ex);
             }
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private String getTokenFromRequest(HttpServletRequest request) {
+    /* -------------------------------- helpers ------------------------------- */
+
+    private String extractToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
-        return (StringUtils.hasText(bearer) && bearer.startsWith("Bearer "))
-                ? bearer.substring(7)
-                : null;
+        if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
+            return bearer.substring(7);
+        }
+        return null;
     }
 }

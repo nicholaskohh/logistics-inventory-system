@@ -12,6 +12,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -41,7 +44,9 @@ public class AuthController {
             @Valid @RequestBody RegisterRequest request,
             HttpServletRequest httpRequest) {
 
-        UserResponse response = userService.registerUser(request);
+        String ipAddress = getClientIp(httpRequest);
+        String userAgent = httpRequest.getHeader("User-Agent");
+        UserResponse response = userService.registerUser(request, ipAddress, userAgent);
         return new ResponseEntity<>(ApiResponse.success("注册成功", response), HttpStatus.CREATED);
     }
 
@@ -77,5 +82,14 @@ public class AuthController {
             return request.getRemoteAddr();
         }
         return xfHeader.split(",")[0];
+    }
+
+    @GetMapping("/public-key")
+    public String getPublicKey() throws IOException {
+        try (InputStream is = getClass()
+                .getClassLoader()
+                .getResourceAsStream("keys/public.pem")) {
+            return new String(is.readAllBytes());
+        }
     }
 }

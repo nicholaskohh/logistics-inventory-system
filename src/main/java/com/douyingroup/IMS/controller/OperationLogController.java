@@ -35,7 +35,7 @@ public class OperationLogController {
 
     @GetMapping("/user/{userId}")
     @Operation(summary = "查询用户操作日志")
-    @PreAuthorize("hasRole('ADMIN') or #userId == authentication.principal.userId")
+    @PreAuthorize("hasRole('ADMIN') or #userId == principal.userId")
     public ResponseEntity<ApiResponse<Page<OperationLogResponse>>> getLogsByUser(
             @PathVariable String userId,
             @RequestParam(defaultValue = "0") int page,
