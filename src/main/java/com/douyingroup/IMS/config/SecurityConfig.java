@@ -1,10 +1,10 @@
 package com.douyingroup.IMS.config;
 
 import com.douyingroup.IMS.security.JwtAuthenticationFilter;
-import com.douyingroup.IMS.security.JwtUtil;
-import com.douyingroup.IMS.service.UserService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -15,79 +15,41 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+    private final JwtAuthenticationFilter jwtFilter;
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
-
-    @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtil jwtUtil, UserService userService) {
-        return new JwtAuthenticationFilter(jwtUtil, userService);
-    }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints - NO authentication needed
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/register",
-                                "/api/auth/public-key",
-
-                                // Swagger / OpenAPI
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs",
-                                "/v3/api-docs/**",
-                                "/api-docs",
-                                "/api-docs/**",
-                                "/swagger-resources/**",
-                                "/webjars/**",
-                                "/",
-                                "/index.html",
-                                // <- allow Spring’s error controller + static error pages
-                                "/error",
-                                "/error/**"
-                        ).permitAll()
-                        // All other endpoints require authentication
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
+          .csrf(csrf -> csrf.disable())
+          .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+          .authorizeHttpRequests(auth -> auth
+              .requestMatchers(
+                  "/api/auth/login",
+                  "/api/auth/register",
+                  "/api/auth/public-key",
+                  "/api-docs/**", 
+                  "/v3/api-docs/**", 
+                  "/swagger-ui/**", 
+                  "/swagger-ui.html"
+              ).permitAll()
+              .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+              .anyRequest().authenticated()
+          )
+          .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5173"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
-        configuration.setAllowCredentials(true);
+    @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+    @Bean
+    AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+        return cfg.getAuthenticationManager();
     }
 }
